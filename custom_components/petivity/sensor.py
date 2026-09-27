@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -22,20 +21,15 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
-from .coordinator import DailyCounts, PetivityConfigEntry, PetivityCoordinator
+from .coordinator import DailyCounts, PetivityConfigEntry, PetivityCoordinator, parse_time
 from .entity import PetivityCatEntity, PetivityMachineEntity
 
 ELIMINATION_TYPES = ["urination", "defecation", "combo", "none"]
 
 
-def _time(value: Any) -> datetime | None:
-    """Parse an API timestamp. They carry no offset but are UTC."""
-    if not isinstance(value, str) or (parsed := dt_util.parse_datetime(value)) is None:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt_util.UTC)
+_time = parse_time
 
 
 def _weight_kg(event: dict[str, Any] | None) -> float | None:

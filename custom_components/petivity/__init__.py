@@ -10,7 +10,7 @@ from .api import PetivityClient
 from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN
 from .coordinator import PetivityConfigEntry, PetivityCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PetivityConfigEntry) -> bool:

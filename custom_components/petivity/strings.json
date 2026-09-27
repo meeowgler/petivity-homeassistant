@@ -29,6 +29,14 @@
     }
   },
   "entity": {
+    "event": {
+      "visit": {
+        "name": "Visit",
+        "state_attributes": {
+          "event_type": { "state": { "visit": "Cat visit" } }
+        }
+      }
+    },
     "binary_sensor": {
       "battery_warning": { "name": "Battery warning" },
       "upload_warning": { "name": "Upload warning" },

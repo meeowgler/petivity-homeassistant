@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -13,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import PetivityAuthError, PetivityClient, PetivityError
-from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN, SCAN_INTERVAL
+from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN, EVENT_LOOKBACK, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class PetivityData:
     cat_today: dict[str, DailyCounts] = field(default_factory=dict)
     machine_today: dict[str, DailyCounts] = field(default_factory=dict)
     machine_latest: dict[str, dict[str, Any]] = field(default_factory=dict)
+    new_visits: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _add(counts: DailyCounts, cls: dict[str, Any]) -> None:
@@ -50,6 +52,18 @@ def _add(counts: DailyCounts, cls: dict[str, Any]) -> None:
         counts.urinations += 1
     if elim in ("defecation", "combo"):
         counts.defecations += 1
+
+
+def parse_time(value: Any) -> datetime | None:
+    """Parse an API timestamp. They carry no offset but are UTC."""
+    if not isinstance(value, str) or (parsed := dt_util.parse_datetime(value)) is None:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt_util.UTC)
+
+
+def event_start(event: dict[str, Any] | None) -> datetime | None:
+    """Return when a visit started."""
+    return parse_time((event or {}).get("startTime"))
 
 
 def is_cat_visit(event: dict[str, Any] | None) -> bool:
@@ -85,12 +99,16 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             update_interval=SCAN_INTERVAL,
         )
         self.client = client
+        self._seen: set[str] | None = None
 
     async def _async_update_data(self) -> PetivityData:
+        midnight = dt_util.start_of_local_day()
         try:
             household = await self.client.async_get_household()
+            # Look back past midnight so a visit uploaded just after midnight
+            # still fires its event; only today's visits are counted.
             events = await self.client.async_get_events(
-                dt_util.start_of_local_day(), dt_util.utcnow()
+                midnight - EVENT_LOOKBACK, dt_util.utcnow()
             )
         except PetivityAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
@@ -114,9 +132,12 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             machine_today={machine_id: DailyCounts() for machine_id in machines},
         )
 
+        visits = [event for event in events if is_cat_visit(event)]
+
         # Events arrive newest first, so the first one seen per monitor is its latest.
-        for event in events:
-            if not is_cat_visit(event):
+        for event in visits:
+            started = event_start(event)
+            if started is None or started < midnight:
                 continue
             cls = event["normalisedClassification"]
             machine_id = (event.get("machine") or {}).get("id")
@@ -126,6 +147,13 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             cat_id = (cls.get("cat") or {}).get("id")
             if cat_id in data.cat_today:
                 _add(data.cat_today[cat_id], cls)
+
+        # New visits since the last poll, oldest first. The first poll after
+        # startup only records what exists, so a restart does not replay them.
+        ids = {event["id"] for event in visits}
+        if self._seen is not None:
+            data.new_visits = [event for event in reversed(visits) if event["id"] not in self._seen]
+        self._seen = ids
         return data
 
     def _persist_session(self) -> None:
