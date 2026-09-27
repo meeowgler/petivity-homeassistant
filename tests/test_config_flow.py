@@ -68,3 +68,7 @@ async def test_reauth_updates_entry(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
     assert config_entry.data == new
+    # Reauth reloads the entry; unload it so its poll timer does not linger.
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
