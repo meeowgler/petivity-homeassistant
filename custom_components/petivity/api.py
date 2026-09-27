@@ -34,7 +34,7 @@ GRAPHQL_URL = "https://api.petivity.com/graphql"
 # ("Python/...", "aiohttp/...", "curl/...") with a 403. Any descriptive agent
 # is accepted, so identify the integration honestly. Keep it to a bare
 # product token: an agent containing a URL is blocked too.
-USER_AGENT = "petivity-homeassistant/0.2.1"
+USER_AGENT = "petivity-homeassistant/0.2.2"
 
 # Renew the ID token this many seconds before it expires.
 _TOKEN_MARGIN = 300

@@ -60,7 +60,7 @@ The integration keeps the session alive by itself: Petivity's server renews the 
 
 ## Privacy
 
-The two cookies are stored in Home Assistant's config entry, like any other integration credential. They are redacted from diagnostics downloads. The integration talks only to `api.petivity.com` and identifies itself with its own user agent.
+The two cookies are stored in Home Assistant's config entry, like any other integration credential. They are redacted from diagnostics downloads, which also replace every Petivity ID with an alias and redact names and serial numbers, so a diagnostics file attached to a public issue does not identify the account. The integration talks only to `api.petivity.com` and identifies itself with its own user agent.
 
 ## Development
 
