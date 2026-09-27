@@ -4,6 +4,8 @@ A custom integration for the [Purina Petivity Smart Litter Box Monitor](https://
 
 > **Unofficial.** This is not affiliated with or endorsed by Purina or Nestlé. It uses the same private API as Petivity's own web app, which can change without notice.
 
+Discussion and questions: [Home Assistant Community thread](https://community.home-assistant.io/t/purina-petivity-smart-litter-box-monitor-integration-hacs/1026566). Bugs: [GitHub issues](https://github.com/meeowgler/petivity-homeassistant/issues).
+
 ## Why cloud only
 
 The monitor has no local interface. It sleeps with Wi-Fi off, wakes after a visit, uploads a few kilobytes to Petivity, and disconnects again, typically within about five minutes. There is nothing on your network to talk to, so this integration polls the cloud every five minutes. Expect new visits to appear a few minutes after the cat leaves the box.
