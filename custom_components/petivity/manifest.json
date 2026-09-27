@@ -1,0 +1,12 @@
+{
+  "domain": "petivity",
+  "name": "Purina Petivity",
+  "codeowners": ["@meeowgler"],
+  "config_flow": true,
+  "documentation": "https://github.com/meeowgler/petivity-homeassistant",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/meeowgler/petivity-homeassistant/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Petivity",
+        "description": "Petivity only allows sign-in through its own login page, so this integration reuses the session that page creates. Sign in at https://api.petivity.com/ in a desktop browser, open the developer tools, and under Application (Chrome, Edge) or Storage (Firefox) > Cookies > https://api.petivity.com copy the values of the `id_token` and `refresh_token` cookies. The README has step-by-step instructions.",
+        "data": {
+          "id_token": "id_token cookie",
+          "refresh_token": "refresh_token cookie"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Petivity sign-in expired",
+        "description": "Petivity no longer accepts the stored session. Sign in at https://api.petivity.com/ again and paste the new `id_token` and `refresh_token` cookie values.",
+        "data": {
+          "id_token": "id_token cookie",
+          "refresh_token": "refresh_token cookie"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Petivity rejected this session. Copy both cookies again right after signing in.",
+      "cannot_connect": "Could not reach Petivity."
+    },
+    "abort": {
+      "already_configured": "This Petivity household is already configured.",
+      "reauth_successful": "Petivity sign-in updated.",
+      "wrong_account": "Those cookies belong to a different Petivity household."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "battery_warning": { "name": "Battery warning" },
+      "upload_warning": { "name": "Upload warning" },
+      "firmware_update": { "name": "Firmware update available" }
+    },
+    "sensor": {
+      "last_upload": { "name": "Last upload" },
+      "power_mode": { "name": "Power mode" },
+      "st_firmware": { "name": "Sensor firmware" },
+      "esp_firmware": { "name": "Wi-Fi firmware" },
+      "visits_today": { "name": "Visits today" },
+      "urinations_today": { "name": "Urinations today" },
+      "defecations_today": { "name": "Defecations today" },
+      "last_visit": { "name": "Last visit" },
+      "last_visit_type": {
+        "name": "Last visit type",
+        "state": {
+          "urination": "Urination",
+          "defecation": "Defecation",
+          "combo": "Urination and defecation",
+          "none": "No elimination"
+        }
+      },
+      "last_visit_duration": { "name": "Last visit duration" }
+    }
+  }
+}
