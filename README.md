@@ -22,11 +22,11 @@ The monitor has no local interface. It sleeps with Wi-Fi off, wakes after a visi
 | Power mode, Wi-Fi signal, Upload warning, Firmware update available | Diagnostic |
 | Sensor firmware, Wi-Fi firmware | Diagnostic, disabled by default |
 
-**One device per cat**
+**One device per cat**, named "Petivity <cat>" so its entities do not collide with the same cat in other pet integrations
 
 | Entity | Notes |
 |---|---|
-| Weight | From the latest weighed visit; outliers are ignored. Shown in pounds on a US-customary system |
+| Weight | From the latest weighed visit; outliers are ignored. Pounds on a US-customary system, kilograms otherwise |
 | Last visit, Last visit type, Last visit duration | Type is urination, defecation, both, or no elimination |
 | Visits today, Urinations today, Defecations today | Since local midnight |
 

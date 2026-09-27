@@ -23,6 +23,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 from .coordinator import DailyCounts, PetivityConfigEntry, PetivityCoordinator
 from .entity import PetivityCatEntity, PetivityMachineEntity
@@ -276,6 +277,14 @@ class CatLatestSensor(PetivityCatEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator, cat_id, description.key)
         self.entity_description = description
+        if description is CAT_WEIGHT:
+            # Home Assistant does not convert kilograms for US customary
+            # systems on its own, so suggest pounds there.
+            self._attr_suggested_unit_of_measurement = (
+                UnitOfMass.POUNDS
+                if coordinator.hass.config.units is US_CUSTOMARY_SYSTEM
+                else UnitOfMass.KILOGRAMS
+            )
 
     @property
     def native_value(self) -> Any:

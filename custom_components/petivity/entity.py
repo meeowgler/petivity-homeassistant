@@ -49,14 +49,15 @@ class PetivityCatEntity(CoordinatorEntity[PetivityCoordinator]):
         super().__init__(coordinator)
         self.cat_id = cat_id
         self._attr_unique_id = f"{cat_id}_{key}"
-        cat = self.cat
-        machine_id = (cat.get("machine") or {}).get("id")
+        # Cats often exist in other pet integrations too (litter robots,
+        # feeders), so prefix the device name to keep entity IDs distinct.
+        # No via_device: a cat's assigned monitor says nothing about which
+        # boxes it actually uses.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, cat_id)},
             manufacturer=MANUFACTURER,
             model="Cat",
-            name=cat.get("name") or "Cat",
-            via_device=(DOMAIN, machine_id) if machine_id else None,
+            name=f"Petivity {self.cat.get('name') or 'cat'}",
         )
 
     @property
