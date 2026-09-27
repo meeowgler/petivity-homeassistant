@@ -16,6 +16,8 @@ from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+PLACEHOLDERS = {"login_url": "https://api.petivity.com/"}
+
 SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ID_TOKEN): str,
@@ -59,7 +61,9 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(household_id)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title="Petivity", data=session)
-        return self.async_show_form(step_id="user", data_schema=SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="user", data_schema=SCHEMA, errors=errors, description_placeholders=PLACEHOLDERS
+        )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()
@@ -74,4 +78,9 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(household_id)
                 self._abort_if_unique_id_mismatch(reason="wrong_account")
                 return self.async_update_reload_and_abort(self._get_reauth_entry(), data=session)
-        return self.async_show_form(step_id="reauth_confirm", data_schema=SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=SCHEMA,
+            errors=errors,
+            description_placeholders=PLACEHOLDERS,
+        )

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Petivity",
-        "description": "Petivity only allows sign-in through its own login page, so this integration reuses the session that page creates. Sign in at https://api.petivity.com/ in a desktop browser, open the developer tools, and under Application (Chrome, Edge) or Storage (Firefox) > Cookies > https://api.petivity.com copy the values of the `id_token` and `refresh_token` cookies. The README has step-by-step instructions.",
+        "description": "Petivity only allows sign-in through its own login page, so this integration reuses the session that page creates. Sign in at {login_url} in a desktop browser, open the developer tools, and under Application (Chrome, Edge) or Storage (Firefox) > Cookies > {login_url} copy the values of the `id_token` and `refresh_token` cookies. The README has step-by-step instructions.",
         "data": {
           "id_token": "id_token cookie",
           "refresh_token": "refresh_token cookie"
@@ -11,7 +11,7 @@
       },
       "reauth_confirm": {
         "title": "Petivity sign-in expired",
-        "description": "Petivity no longer accepts the stored session. Sign in at https://api.petivity.com/ again and paste the new `id_token` and `refresh_token` cookie values.",
+        "description": "Petivity no longer accepts the stored session. Sign in at {login_url} again and paste the new `id_token` and `refresh_token` cookie values.",
         "data": {
           "id_token": "id_token cookie",
           "refresh_token": "refresh_token cookie"
