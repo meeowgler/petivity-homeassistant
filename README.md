@@ -21,6 +21,7 @@ The monitor has no local interface. It sleeps with Wi-Fi off, wakes after a visi
 | Last visit | Most recent cat visit today |
 | Power mode, Wi-Fi signal, Upload warning, Firmware update available | Diagnostic |
 | Sensor firmware, Wi-Fi firmware | Diagnostic, disabled by default |
+| Visit (event) | Fires once per new cat visit, with `cat`, `visit_type`, `weight_kg`, `duration_s` and `started`. Visits already there when Home Assistant starts do not fire again |
 
 **One device per cat**, named "Petivity <cat>" so its entities do not collide with the same cat in other pet integrations
 
@@ -63,7 +64,9 @@ The two cookies are stored in Home Assistant's config entry, like any other inte
 
 ## Development
 
-`tests/live_check.py` runs the API client, the event aggregation and every sensor's value function against your real account, outside Home Assistant:
+`pytest` runs the unit tests (`pip install -r requirements_test.txt` first); CI runs them with hassfest and the HACS check on every push.
+
+`tests/live_check.py` separately runs the API client, the event aggregation and every sensor's value function against your real account, outside Home Assistant:
 
 ```bash
 PETIVITY_ID_TOKEN=... PETIVITY_REFRESH_TOKEN=... python tests/live_check.py
