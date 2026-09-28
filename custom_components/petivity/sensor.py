@@ -227,7 +227,7 @@ class MachineCountSensor(PetivityMachineEntity, SensorEntity):
 
 
 class MachineLatestSensor(PetivityMachineEntity, SensorEntity):
-    """The latest cat visit to one monitor today."""
+    """The latest cat visit to one monitor."""
 
     entity_description: LatestSensorDescription
 

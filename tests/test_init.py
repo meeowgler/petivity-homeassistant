@@ -84,6 +84,41 @@ async def test_sensors(
     assert hass.states.get(_entity(hass, "sensor", f"{CAT_TOM}_weight")).name == "Petivity Tom Weight"
 
 
+async def test_monitor_last_visit_survives_midnight(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_client: MagicMock,
+    config_entry: MockConfigEntry,
+) -> None:
+    freezer.move_to(NOW)
+    await hass.config.async_set_time_zone("UTC")
+    yesterday = visit("y1", "2026-09-26T20:11:03", MACHINE_B, CAT_ZOE)
+    mock_client.async_get_household.return_value = household(
+        events_by_machine={
+            # The monitor's newest event is an automatic cleaning, not a cat.
+            MACHINE_B: [
+                visit("c1", "2026-09-26T21:00:00", MACHINE_B, is_cat=False, elim=None, grams=None),
+                yesterday,
+            ],
+            MACHINE_A: [visit("a0", "2026-09-27T10:00:00", MACHINE_A, CAT_TOM)],
+        }
+    )
+    # Today's fetch has a newer visit to monitor A than the household query saw.
+    mock_client.async_get_events.return_value = [
+        visit("a1", "2026-09-27T15:30:00", MACHINE_A, CAT_TOM),
+    ]
+    await _setup(hass, config_entry)
+
+    def state(key: str) -> str:
+        return hass.states.get(_entity(hass, "sensor", key)).state
+
+    # No visits to monitor B today, but its last visit is still yesterday's.
+    assert state(f"{MACHINE_B}_visits_today") == "0"
+    assert state(f"{MACHINE_B}_last_visit") == "2026-09-26T20:11:03+00:00"
+    # Monitor A takes the newer of the two sources.
+    assert state(f"{MACHINE_A}_last_visit") == "2026-09-27T15:30:00+00:00"
+
+
 async def test_visit_event_fires_only_for_new_visits(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,

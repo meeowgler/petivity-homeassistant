@@ -41,7 +41,7 @@ class PetivityData:
     cat_weighed: dict[str, dict[str, Any] | None]
     cat_today: dict[str, DailyCounts] = field(default_factory=dict)
     machine_today: dict[str, DailyCounts] = field(default_factory=dict)
-    machine_latest: dict[str, dict[str, Any]] = field(default_factory=dict)
+    machine_latest: dict[str, dict[str, Any] | None] = field(default_factory=dict)
     new_visits: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -77,9 +77,9 @@ def _is_weighed(event: dict[str, Any]) -> bool:
     return cls.get("catWeight") is not None and not cls.get("isWeightOutlier")
 
 
-def _recent(cat: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return a cat's most recent real visits, newest first."""
-    edges = (cat.get("latestEvents") or {}).get("edges") or []
+def _recent(owner: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return a cat's or a monitor's most recent real visits, newest first."""
+    edges = (owner.get("latestEvents") or {}).get("edges") or []
     return [edge["node"] for edge in edges if is_cat_visit(edge.get("node"))]
 
 
@@ -130,11 +130,18 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             },
             cat_today={cat_id: DailyCounts() for cat_id in cats},
             machine_today={machine_id: DailyCounts() for machine_id in machines},
+            # From the monitor's own newest events, not just today's, so the
+            # last visit does not go blank at midnight.
+            machine_latest={
+                machine_id: next(iter(_recent(machine)), None)
+                for machine_id, machine in machines.items()
+            },
         )
 
         visits = [event for event in events if is_cat_visit(event)]
 
-        # Events arrive newest first, so the first one seen per monitor is its latest.
+        # Events arrive newest first. A visit fetched here can be newer than the
+        # household query's latest events, so keep whichever is newer.
         for event in visits:
             started = event_start(event)
             if started is None or started < midnight:
@@ -143,7 +150,9 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             machine_id = (event.get("machine") or {}).get("id")
             if machine_id in data.machine_today:
                 _add(data.machine_today[machine_id], cls)
-                data.machine_latest.setdefault(machine_id, event)
+                latest_start = event_start(data.machine_latest.get(machine_id))
+                if latest_start is None or started > latest_start:
+                    data.machine_latest[machine_id] = event
             cat_id = (cls.get("cat") or {}).get("id")
             if cat_id in data.cat_today:
                 _add(data.cat_today[cat_id], cls)

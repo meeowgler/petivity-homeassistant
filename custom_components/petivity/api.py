@@ -80,6 +80,14 @@ query PetivityHousehold($jwt: String!) {
         hardwareRevision
         wifiRssi
         isFrozen
+        # A monitor's own newest events, so its last visit survives midnight.
+        latestEvents: events(
+          first: 10
+          sort: START_TIME_DESC
+          filters: { excludeFalseTriggerClassifications: true }
+        ) {
+          edges { node { %s } }
+        }
       }
       cats {
         id
@@ -93,7 +101,7 @@ query PetivityHousehold($jwt: String!) {
     }
   }
 }
-""" % _EVENT_FIELDS
+""" % (_EVENT_FIELDS, _EVENT_FIELDS)
 
 QUERY_EVENTS = """
 query PetivityEvents(

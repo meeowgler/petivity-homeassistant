@@ -88,10 +88,18 @@ def visit(
     }
 
 
-def household(events_by_cat: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
-    """Return the household with two cats and their latest events."""
+def household(
+    events_by_cat: dict[str, list[dict[str, Any]]] | None = None,
+    events_by_machine: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Return the household with two cats, and the cats' and monitors' latest events."""
     events_by_cat = events_by_cat or {}
+    events_by_machine = events_by_machine or {}
     data = copy.deepcopy(HOUSEHOLD)
+    for machine in data["machines"]:
+        machine["latestEvents"] = {
+            "edges": [{"node": e} for e in events_by_machine.get(machine["id"], [])]
+        }
     data["cats"] = [
         {
             "id": cat_id,
