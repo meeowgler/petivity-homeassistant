@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -14,8 +15,14 @@ from .conftest import CAT_TOM, CAT_ZOE, HOUSEHOLD, MACHINE_A, MACHINE_B, househo
 
 
 async def test_diagnostics_are_anonymous(
-    hass: HomeAssistant, mock_client: MagicMock, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_client: MagicMock,
+    config_entry: MockConfigEntry,
 ) -> None:
+    # The visit must fall on "today" for the daily counts checked below.
+    freezer.move_to("2026-09-27T16:00:00+00:00")
+    await hass.config.async_set_time_zone("UTC")
     events = [visit("RXZlbnQ6c2VjcmV0", "2026-09-27T14:00:00", MACHINE_A, CAT_TOM)]
     mock_client.async_get_household.return_value = household({CAT_TOM: events})
     mock_client.async_get_events.return_value = events
