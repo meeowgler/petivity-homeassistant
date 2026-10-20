@@ -6,10 +6,11 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import PetivityAuthError, PetivityClient, PetivityError
 from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN
@@ -35,11 +36,9 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any]
     ) -> tuple[dict[str, str], str | None, dict[str, str]]:
         """Return (errors, household id, session to store)."""
-        client = PetivityClient(
-            async_get_clientsession(self.hass),
-            user_input[CONF_ID_TOKEN],
-            user_input[CONF_REFRESH_TOKEN],
-        )
+        # Its own short-lived session with an empty cookie jar, as in async_setup_entry.
+        http = async_create_clientsession(self.hass, cookie_jar=aiohttp.DummyCookieJar())
+        client = PetivityClient(http, user_input[CONF_ID_TOKEN], user_input[CONF_REFRESH_TOKEN])
         try:
             await client.async_renew()
             household = await client.async_get_household()
@@ -48,6 +47,8 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
         except PetivityError:
             _LOGGER.exception("Could not reach Petivity")
             return {"base": "cannot_connect"}, None, {}
+        finally:
+            await http.close()
         session = {CONF_ID_TOKEN: client.id_token, CONF_REFRESH_TOKEN: client.refresh_token}
         return {}, household["id"], session
 

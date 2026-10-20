@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import aiohttp
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -190,6 +192,30 @@ async def test_unload(
     await _setup(hass, config_entry)
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_own_session_without_cookie_jar(
+    hass: HomeAssistant, mock_client: MagicMock, config_entry: MockConfigEntry
+) -> None:
+    """The client gets its own session with an empty cookie jar, not the shared one."""
+    created: list[tuple[aiohttp.ClientSession, dict]] = []
+
+    def capture(hass: HomeAssistant, **kwargs):
+        session = aiohttp_client.async_create_clientsession(hass, **kwargs)
+        created.append((session, kwargs))
+        return session
+
+    with (
+        patch("custom_components.petivity.async_create_clientsession", side_effect=capture),
+        patch("custom_components.petivity.PetivityClient", return_value=mock_client) as client_cls,
+    ):
+        await _setup(hass, config_entry)
+
+    assert len(created) == 1
+    session, kwargs = created[0]
+    assert isinstance(kwargs["cookie_jar"], aiohttp.DummyCookieJar)
+    assert client_cls.call_args.args[0] is session
+    assert session is not aiohttp_client.async_get_clientsession(hass)
 
 
 async def test_weight_in_pounds_on_us_customary(
