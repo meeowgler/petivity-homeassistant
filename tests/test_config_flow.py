@@ -35,7 +35,7 @@ async def test_user_flow_creates_entry(hass: HomeAssistant, mock_client: MagicMo
 async def test_validation_uses_own_closed_session(
     hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """Validation runs on its own session with an empty cookie jar, closed afterwards."""
+    """Validation runs on its own session with an empty cookie jar, detached afterwards."""
     created: list[tuple[aiohttp.ClientSession, dict]] = []
 
     def capture(hass: HomeAssistant, **kwargs):
@@ -58,8 +58,9 @@ async def test_validation_uses_own_closed_session(
     assert len(created) == 1
     session, kwargs = created[0]
     assert isinstance(kwargs["cookie_jar"], aiohttp.DummyCookieJar)
+    assert kwargs["auto_cleanup"] is False
     assert client_cls.call_args.args[0] is session
-    assert session.closed
+    assert session.closed  # detach() puts the session in the closed state
 
 
 async def test_user_flow_invalid_auth(hass: HomeAssistant, mock_client: MagicMock) -> None:

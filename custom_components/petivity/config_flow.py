@@ -37,7 +37,11 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> tuple[dict[str, str], str | None, dict[str, str]]:
         """Return (errors, household id, session to store)."""
         # Its own short-lived session with an empty cookie jar, as in async_setup_entry.
-        http = async_create_clientsession(self.hass, cookie_jar=aiohttp.DummyCookieJar())
+        # Home Assistant does not allow closing its sessions; one created without
+        # auto_cleanup is detached when done instead.
+        http = async_create_clientsession(
+            self.hass, auto_cleanup=False, cookie_jar=aiohttp.DummyCookieJar()
+        )
         client = PetivityClient(http, user_input[CONF_ID_TOKEN], user_input[CONF_REFRESH_TOKEN])
         try:
             await client.async_renew()
@@ -48,7 +52,7 @@ class PetivityConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Could not reach Petivity")
             return {"base": "cannot_connect"}, None, {}
         finally:
-            await http.close()
+            http.detach()
         session = {CONF_ID_TOKEN: client.id_token, CONF_REFRESH_TOKEN: client.refresh_token}
         return {}, household["id"], session
 
