@@ -16,6 +16,7 @@ and adopts whatever fresh cookies the server sets in reply.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from http.cookies import SimpleCookie
 import json
@@ -34,10 +35,16 @@ GRAPHQL_URL = "https://api.petivity.com/graphql"
 # ("Python/...", "aiohttp/...", "curl/...") with a 403. Any descriptive agent
 # is accepted, so identify the integration honestly. Keep it to a bare
 # product token: an agent containing a URL is blocked too.
-USER_AGENT = "petivity-homeassistant/0.2.5"
+USER_AGENT = "petivity-homeassistant/0.2.6"
 
 # Renew the ID token this many seconds before it expires.
 _TOKEN_MARGIN = 300
+
+# Petivity's gateway times out now and then (HTTP 504), and a connection or
+# DNS lookup can fail once. One retry after a pause rides out those blips
+# without hiding a real outage, which still fails the second attempt.
+_RETRY_STATUSES = frozenset({502, 503, 504})
+_RETRY_DELAY = 5
 
 _EVENT_FIELDS = """
   id
@@ -145,6 +152,10 @@ class PetivityConnectionError(PetivityError):
     """The API could not be reached or returned an unexpected answer."""
 
 
+class _PetivityTransientError(PetivityConnectionError):
+    """A failure worth one retry: a gateway error, a timeout or a lost connection."""
+
+
 def jwt_expiry(token: str) -> float:
     """Return the ``exp`` claim of a JWT, or 0 if it cannot be read."""
     try:
@@ -185,6 +196,14 @@ class PetivityClient:
 
     async def _post(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         try:
+            return await self._post_once(query, variables)
+        except _PetivityTransientError as err:
+            _LOGGER.debug("Petivity request failed (%s); retrying in %s s", err, _RETRY_DELAY)
+        await asyncio.sleep(_RETRY_DELAY)
+        return await self._post_once(query, variables)
+
+    async def _post_once(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        try:
             async with self._session.post(
                 GRAPHQL_URL,
                 json={"query": query, "variables": variables},
@@ -195,11 +214,15 @@ class PetivityClient:
                 },
                 timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
+                if resp.status in _RETRY_STATUSES:
+                    raise _PetivityTransientError(f"GraphQL returned HTTP {resp.status}")
                 if resp.status != 200:
                     raise PetivityConnectionError(f"GraphQL returned HTTP {resp.status}")
                 self._absorb_cookies(resp)
                 return await resp.json(content_type=None)
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        except (aiohttp.ClientConnectionError, TimeoutError) as err:
+            raise _PetivityTransientError(f"GraphQL request failed: {err}") from err
+        except (aiohttp.ClientError, ValueError) as err:
             raise PetivityConnectionError(f"GraphQL request failed: {err}") from err
 
     async def async_renew(self) -> None:

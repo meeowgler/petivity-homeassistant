@@ -7,11 +7,16 @@ from datetime import datetime, timedelta, timezone
 import json
 import time
 
+import aiohttp
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+    AiohttpClientMockResponse,
+)
 
+from custom_components.petivity import api
 from custom_components.petivity.api import (
     GRAPHQL_URL,
     USER_AGENT,
@@ -79,3 +84,52 @@ async def test_http_error_raises_connection_error(
     client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
     with pytest.raises(PetivityConnectionError):
         await client.async_renew()
+    # A refusal is not a blip, so it is not retried.
+    assert aioclient_mock.call_count == 1
+
+
+def _responses(*replies: dict):
+    """Answer successive requests with each reply in turn."""
+    queue = list(replies)
+
+    async def side_effect(method, url, data):
+        return AiohttpClientMockResponse(method=method, url=url, **queue.pop(0))
+
+    return side_effect
+
+
+@pytest.fixture
+def no_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api, "_RETRY_DELAY", 0)
+
+
+@pytest.mark.usefixtures("no_retry_delay")
+@pytest.mark.parametrize(
+    "first",
+    [
+        {"status": 504},
+        {"status": 502},
+        {"exc": aiohttp.ClientConnectionError()},
+        {"exc": TimeoutError()},
+    ],
+)
+async def test_blip_is_retried_once(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, first: dict
+) -> None:
+    aioclient_mock.post(
+        GRAPHQL_URL, side_effect=_responses(first, {"json": {"data": {"authenticated": True}}})
+    )
+    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
+    await client.async_renew()
+    assert aioclient_mock.call_count == 2
+
+
+@pytest.mark.usefixtures("no_retry_delay")
+async def test_outage_still_fails_after_the_retry(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.post(GRAPHQL_URL, side_effect=_responses({"status": 504}, {"status": 504}))
+    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
+    with pytest.raises(PetivityConnectionError, match="HTTP 504"):
+        await client.async_renew()
+    assert aioclient_mock.call_count == 2
