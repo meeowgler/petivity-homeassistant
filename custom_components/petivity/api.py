@@ -216,6 +216,10 @@ class PetivityClient:
             ) as resp:
                 if resp.status in _RETRY_STATUSES:
                     raise _PetivityTransientError(f"GraphQL returned HTTP {resp.status}")
+                if resp.status == 401:
+                    # The session expired or was revoked. 403 stays a connection
+                    # error: Akamai answers 403 to clients it blocks.
+                    raise PetivityAuthError("Petivity rejected the session (HTTP 401)")
                 if resp.status != 200:
                     raise PetivityConnectionError(f"GraphQL returned HTTP {resp.status}")
                 self._absorb_cookies(resp)

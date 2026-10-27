@@ -88,6 +88,16 @@ async def test_http_error_raises_connection_error(
     assert aioclient_mock.call_count == 1
 
 
+async def test_unauthorized_raises_auth_error(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.post(GRAPHQL_URL, status=401)
+    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
+    with pytest.raises(PetivityAuthError):
+        await client.async_renew()
+    assert aioclient_mock.call_count == 1
+
+
 def _responses(*replies: dict):
     """Answer successive requests with each reply in turn."""
     queue = list(replies)
