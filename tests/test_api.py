@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timedelta, timezone
 import json
-import time
 
 import aiohttp
 import pytest
@@ -20,7 +19,6 @@ from custom_components.petivity import api
 from custom_components.petivity.api import (
     GRAPHQL_URL,
     USER_AGENT,
-    PetivityAuthError,
     PetivityClient,
     PetivityConnectionError,
     jwt_expiry,
@@ -33,6 +31,39 @@ def _jwt(exp: float) -> str:
         return base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip("=")
 
     return f"{enc({'alg': 'none'})}.{enc({'exp': int(exp)})}.sig"
+
+
+class _StubAuth:
+    """Stand in for PurinaAuth: hand out a token and record forced renewals."""
+
+    def __init__(self) -> None:
+        self.id_token = "id.tok.en"
+        self.forced: list[bool] = []
+
+    async def async_id_token(self, *, force: bool = False) -> str:
+        self.forced.append(force)
+        return self.id_token
+
+
+def _client(hass: HomeAssistant) -> tuple[PetivityClient, _StubAuth]:
+    auth = _StubAuth()
+    return PetivityClient(async_get_clientsession(hass), auth), auth  # type: ignore[arg-type]
+
+
+def _household(**extra: object) -> dict:
+    return {
+        "data": {"authenticate": {"myHousehold": {"id": "H", "machines": [], "cats": [], **extra}}}
+    }
+
+
+def _responses(*replies: dict):
+    """Answer successive requests with each reply in turn."""
+    queue = list(replies)
+
+    async def side_effect(method, url, data):
+        return AiohttpClientMockResponse(method=method, url=url, **queue.pop(0))
+
+    return side_effect
 
 
 def test_jwt_expiry() -> None:
@@ -50,62 +81,52 @@ def test_user_agent_has_no_url() -> None:
     assert "http" not in USER_AGENT and "/" in USER_AGENT
 
 
-async def test_expired_token_is_renewed_from_cookies(
+async def test_query_sends_token_and_no_cookie(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    fresh = _jwt(time.time() + 3600)
+    aioclient_mock.post(GRAPHQL_URL, json=_household())
+    client, auth = _client(hass)
+    household = await client.async_get_household()
+    assert household["id"] == "H"
+    headers = aioclient_mock.mock_calls[0][3]
+    assert "Cookie" not in headers
+    assert headers["User-Agent"] == USER_AGENT
+    assert aioclient_mock.mock_calls[0][2]["variables"]["jwt"] == "id.tok.en"
+    assert auth.forced == [False]
+
+
+async def test_null_authenticate_retries_with_a_forced_token(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
     aioclient_mock.post(
         GRAPHQL_URL,
-        json={"data": {"authenticated": True}},
-        headers={"Set-Cookie": f"id_token={fresh}; Path=/; HttpOnly"},
+        side_effect=_responses({"json": {"data": {"authenticate": None}}}, {"json": _household()}),
     )
-    client = PetivityClient(async_get_clientsession(hass), _jwt(time.time() - 60), "refresh")
-    await client.async_renew()
-    assert client.id_token == fresh
-    assert client.refresh_token == "refresh"
-    sent = aioclient_mock.mock_calls[0][3]
-    assert sent["Cookie"].startswith("id_token=")
-    assert sent["User-Agent"] == USER_AGENT
+    client, auth = _client(hass)
+    household = await client.async_get_household()
+    assert household["id"] == "H"
+    # First with the cached token, then once more forcing a fresh one.
+    assert auth.forced == [False, True]
 
 
-async def test_rejected_session_raises_auth_error(
+async def test_null_authenticate_twice_raises(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    aioclient_mock.post(GRAPHQL_URL, json={"data": {"authenticated": False}})
-    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
-    with pytest.raises(PetivityAuthError):
-        await client.async_renew()
+    aioclient_mock.post(
+        GRAPHQL_URL, json={"data": {"authenticate": None}, "errors": [{"message": "nope"}]}
+    )
+    client, _ = _client(hass)
+    with pytest.raises(PetivityConnectionError, match="nope"):
+        await client.async_get_household()
 
 
-async def test_http_error_raises_connection_error(
+async def test_empty_household_raises(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    aioclient_mock.post(GRAPHQL_URL, status=403)
-    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
-    with pytest.raises(PetivityConnectionError):
-        await client.async_renew()
-    # A refusal is not a blip, so it is not retried.
-    assert aioclient_mock.call_count == 1
-
-
-async def test_unauthorized_raises_auth_error(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    aioclient_mock.post(GRAPHQL_URL, status=401)
-    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
-    with pytest.raises(PetivityAuthError):
-        await client.async_renew()
-    assert aioclient_mock.call_count == 1
-
-
-def _responses(*replies: dict):
-    """Answer successive requests with each reply in turn."""
-    queue = list(replies)
-
-    async def side_effect(method, url, data):
-        return AiohttpClientMockResponse(method=method, url=url, **queue.pop(0))
-
-    return side_effect
+    aioclient_mock.post(GRAPHQL_URL, json={"data": {"authenticate": {"myHousehold": None}}})
+    client, _ = _client(hass)
+    with pytest.raises(PetivityConnectionError, match="household"):
+        await client.async_get_household()
 
 
 @pytest.fixture
@@ -126,11 +147,9 @@ def no_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_blip_is_retried_once(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, first: dict
 ) -> None:
-    aioclient_mock.post(
-        GRAPHQL_URL, side_effect=_responses(first, {"json": {"data": {"authenticated": True}}})
-    )
-    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
-    await client.async_renew()
+    aioclient_mock.post(GRAPHQL_URL, side_effect=_responses(first, {"json": _household()}))
+    client, _ = _client(hass)
+    assert (await client.async_get_household())["id"] == "H"
     assert aioclient_mock.call_count == 2
 
 
@@ -139,7 +158,7 @@ async def test_outage_still_fails_after_the_retry(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     aioclient_mock.post(GRAPHQL_URL, side_effect=_responses({"status": 504}, {"status": 504}))
-    client = PetivityClient(async_get_clientsession(hass), "x.y.z", "refresh")
+    client, _ = _client(hass)
     with pytest.raises(PetivityConnectionError, match="HTTP 504"):
-        await client.async_renew()
+        await client.async_get_household()
     assert aioclient_mock.call_count == 2
