@@ -1,31 +1,25 @@
-"""Async client for the Purina Petivity cloud API.
+"""Async client for the Purina Petivity cloud GraphQL API.
 
-Petivity signs users in through a Cognito hosted page (email/password or
-Sign in with Apple). The web app's Cognito client is confidential, so the
-code-for-token exchange happens on Petivity's own server, which then keeps
-the session in two cookies on ``api.petivity.com``:
-
-- ``id_token``: a Cognito ID token (one hour), which the GraphQL API also
-  accepts as the ``jwt`` argument of ``authenticate``;
-- ``refresh_token``: the Cognito refresh token, which only Petivity's server
-  can redeem, because it holds the client secret.
-
-The client therefore stores that cookie pair, sends it with every request,
-and adopts whatever fresh cookies the server sets in reply.
+The API wraps every query in ``authenticate(jwt:)`` and accepts the ID token
+that Purina's Auth0 tenant issues for the mobile app's client. Obtaining and
+renewing that token from an email and password lives in ``purina_auth``; this
+module only runs the GraphQL queries, asking the auth provider for a fresh
+token and retrying once if the API reports the token as no longer valid.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-from http.cookies import SimpleCookie
 import json
 import logging
-import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from .purina_auth import PurinaAuth
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,10 +29,7 @@ GRAPHQL_URL = "https://api.petivity.com/graphql"
 # ("Python/...", "aiohttp/...", "curl/...") with a 403. Any descriptive agent
 # is accepted, so identify the integration honestly. Keep it to a bare
 # product token: an agent containing a URL is blocked too.
-USER_AGENT = "petivity-homeassistant/0.2.7"
-
-# Renew the ID token this many seconds before it expires.
-_TOKEN_MARGIN = 300
+USER_AGENT = "petivity-homeassistant/0.3.0"
 
 # Petivity's gateway times out now and then (HTTP 504), and a connection or
 # DNS lookup can fail once. One retry after a pause rides out those blips
@@ -63,8 +54,6 @@ _EVENT_FIELDS = """
     cat { id }
   }
 """
-
-QUERY_AUTHENTICATED = "query PetivityAuthenticated { authenticated }"
 
 QUERY_HOUSEHOLD = """
 query PetivityHousehold($jwt: String!) {
@@ -172,27 +161,11 @@ def utc_iso(value: datetime) -> str:
 
 
 class PetivityClient:
-    """Minimal Petivity API client."""
+    """Minimal Petivity GraphQL client, authenticated by a token provider."""
 
-    def __init__(self, session: aiohttp.ClientSession, id_token: str, refresh_token: str) -> None:
+    def __init__(self, session: aiohttp.ClientSession, auth: PurinaAuth) -> None:
         self._session = session
-        self.id_token = id_token.strip()
-        self.refresh_token = refresh_token.strip()
-
-    def _cookie_header(self) -> str:
-        return f"id_token={self.id_token}; refresh_token={self.refresh_token}"
-
-    def _absorb_cookies(self, resp: aiohttp.ClientResponse) -> None:
-        """Adopt the renewed session cookies the server sends back."""
-        for header in resp.headers.getall("Set-Cookie", []):
-            cookie = SimpleCookie()
-            try:
-                cookie.load(header)
-            except ValueError:
-                continue
-            for name in ("id_token", "refresh_token"):
-                if name in cookie and cookie[name].value:
-                    setattr(self, name, cookie[name].value)
+        self._auth = auth
 
     async def _post(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -207,50 +180,33 @@ class PetivityClient:
             async with self._session.post(
                 GRAPHQL_URL,
                 json={"query": query, "variables": variables},
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "application/json",
-                    "Cookie": self._cookie_header(),
-                },
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
                 if resp.status in _RETRY_STATUSES:
                     raise _PetivityTransientError(f"GraphQL returned HTTP {resp.status}")
-                if resp.status == 401:
-                    # The session expired or was revoked. 403 stays a connection
-                    # error: Akamai answers 403 to clients it blocks.
-                    raise PetivityAuthError("Petivity rejected the session (HTTP 401)")
                 if resp.status != 200:
                     raise PetivityConnectionError(f"GraphQL returned HTTP {resp.status}")
-                self._absorb_cookies(resp)
                 return await resp.json(content_type=None)
         except (aiohttp.ClientConnectionError, TimeoutError) as err:
             raise _PetivityTransientError(f"GraphQL request failed: {err}") from err
         except (aiohttp.ClientError, ValueError) as err:
             raise PetivityConnectionError(f"GraphQL request failed: {err}") from err
 
-    async def async_renew(self) -> None:
-        """Ask Petivity's server to confirm the session, renewing the ID token."""
-        body = await self._post(QUERY_AUTHENTICATED, {})
-        if not (body.get("data") or {}).get("authenticated"):
-            raise PetivityAuthError("Petivity no longer accepts this session")
-
     async def _query(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """Run a query inside ``authenticate(jwt:)`` and return that object."""
-        if time.time() > jwt_expiry(self.id_token) - _TOKEN_MARGIN:
-            await self.async_renew()
-        for attempt in (1, 2):
-            body = await self._post(query, {**variables, "jwt": self.id_token})
+        # ``authenticate`` returns null for a token the API will not accept, so
+        # a null answer earns one retry with a freshly forced token before it
+        # is treated as an error.
+        body: dict[str, Any] = {}
+        for force in (False, True):
+            token = await self._auth.async_id_token(force=force)
+            body = await self._post(query, {**variables, "jwt": token})
             auth = (body.get("data") or {}).get("authenticate")
             if auth is not None:
                 return auth
-            messages = "; ".join(e.get("message", "") for e in body.get("errors") or [])
-            if attempt == 1:
-                _LOGGER.debug("Petivity query failed (%s); renewing the session", messages)
-                await self.async_renew()
-                continue
-            raise PetivityConnectionError(f"GraphQL error: {messages or 'no data'}")
-        raise PetivityConnectionError("unreachable")
+        messages = "; ".join(e.get("message", "") for e in body.get("errors") or [])
+        raise PetivityConnectionError(f"GraphQL error: {messages or 'no data'}")
 
     async def async_get_household(self) -> dict[str, Any]:
         """Return the household with its monitors and cats."""
