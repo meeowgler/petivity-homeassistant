@@ -4,8 +4,14 @@ from datetime import timedelta
 
 DOMAIN = "petivity"
 
+CONF_EMAIL = "email"
+CONF_PASSWORD = "password"
+# Session material the integration obtains and renews on its own, stored so a
+# restart does not need a fresh sign-in. The DPoP key must be kept because
+# Auth0 binds the refresh token to it.
 CONF_ID_TOKEN = "id_token"
 CONF_REFRESH_TOKEN = "refresh_token"
+CONF_DPOP_KEY = "dpop_key"
 
 SCAN_INTERVAL = timedelta(minutes=5)
 

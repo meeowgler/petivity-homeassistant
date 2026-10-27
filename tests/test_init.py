@@ -168,9 +168,12 @@ async def test_visit_event_fires_only_for_new_visits(
 
 
 async def test_renewed_session_is_saved(
-    hass: HomeAssistant, mock_client: MagicMock, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_auth: MagicMock,
+    mock_client: MagicMock,
+    config_entry: MockConfigEntry,
 ) -> None:
-    mock_client.id_token = "renewed.id.token"
+    mock_auth.id_token = "renewed.id.token"
     await _setup(hass, config_entry)
     assert config_entry.data[CONF_ID_TOKEN] == "renewed.id.token"
 

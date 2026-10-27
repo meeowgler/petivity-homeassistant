@@ -36,6 +36,7 @@ async def test_diagnostics_are_anonymous(
     for secret in (
         HOUSEHOLD["id"], MACHINE_A, MACHINE_B, CAT_TOM, CAT_ZOE, "RXZlbnQ6c2VjcmV0",
         "VC00LT1AAAA0001", "Office", "Hallway", "Tom", "Zoe", "id.tok.en", "refresh-token",
+        "cat@example.com", "hunter2", "pem-abc123",
     ):
         assert secret not in text, secret
 

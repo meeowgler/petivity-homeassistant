@@ -14,7 +14,15 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import PetivityAuthError, PetivityClient, PetivityError
-from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN, EVENT_LOOKBACK, SCAN_INTERVAL
+from .const import (
+    CONF_DPOP_KEY,
+    CONF_ID_TOKEN,
+    CONF_REFRESH_TOKEN,
+    DOMAIN,
+    EVENT_LOOKBACK,
+    SCAN_INTERVAL,
+)
+from .purina_auth import PurinaAuth
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,7 +97,11 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
     config_entry: PetivityConfigEntry
 
     def __init__(
-        self, hass: HomeAssistant, entry: PetivityConfigEntry, client: PetivityClient
+        self,
+        hass: HomeAssistant,
+        entry: PetivityConfigEntry,
+        client: PetivityClient,
+        auth: PurinaAuth,
     ) -> None:
         super().__init__(
             hass,
@@ -99,6 +111,7 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
             update_interval=SCAN_INTERVAL,
         )
         self.client = client
+        self.auth = auth
         self._seen: set[str] | None = None
 
     async def _async_update_data(self) -> PetivityData:
@@ -166,11 +179,12 @@ class PetivityCoordinator(DataUpdateCoordinator[PetivityData]):
         return data
 
     def _persist_session(self) -> None:
-        """Save renewed session cookies so a restart does not lose them."""
+        """Save the renewed token and rotating refresh token across restarts."""
         entry = self.config_entry
         session = {
-            CONF_ID_TOKEN: self.client.id_token,
-            CONF_REFRESH_TOKEN: self.client.refresh_token,
+            CONF_ID_TOKEN: self.auth.id_token,
+            CONF_REFRESH_TOKEN: self.auth.refresh_token,
+            CONF_DPOP_KEY: self.auth.dpop_key_pem,
         }
         if any(entry.data.get(key) != value for key, value in session.items()):
             self.hass.config_entries.async_update_entry(entry, data={**entry.data, **session})

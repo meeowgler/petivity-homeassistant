@@ -12,28 +12,44 @@ from homeassistant.helpers import aiohttp_client
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.petivity.api import PetivityAuthError, PetivityConnectionError
-from custom_components.petivity.const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN
+from custom_components.petivity.const import (
+    CONF_DPOP_KEY,
+    CONF_EMAIL,
+    CONF_ID_TOKEN,
+    CONF_PASSWORD,
+    CONF_REFRESH_TOKEN,
+    DOMAIN,
+)
 
 from .conftest import HOUSEHOLD
 
-USER_INPUT = {CONF_ID_TOKEN: "id.tok.en", CONF_REFRESH_TOKEN: "refresh-token"}
+USER_INPUT = {CONF_EMAIL: "cat@example.com", CONF_PASSWORD: "hunter2"}
 
 
-async def test_user_flow_creates_entry(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    mock_client.id_token = "renewed.id.token"
+async def test_user_flow_creates_entry(
+    hass: HomeAssistant, mock_auth: MagicMock, mock_client: MagicMock
+) -> None:
+    mock_auth.id_token = "fresh.id.token"
+    mock_auth.refresh_token = "fresh-refresh"
+    mock_auth.dpop_key_pem = "fresh-pem"
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert result["type"] is FlowResultType.FORM
-    assert result["description_placeholders"]["login_url"].startswith("https://")
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["result"].unique_id == HOUSEHOLD["id"]
-    # The renewed token from validation is what gets stored.
-    assert result["data"] == {CONF_ID_TOKEN: "renewed.id.token", CONF_REFRESH_TOKEN: "refresh-token"}
+    assert result["data"] == {
+        CONF_EMAIL: "cat@example.com",
+        CONF_PASSWORD: "hunter2",
+        CONF_ID_TOKEN: "fresh.id.token",
+        CONF_REFRESH_TOKEN: "fresh-refresh",
+        CONF_DPOP_KEY: "fresh-pem",
+    }
+    mock_auth.async_login.assert_awaited_once()
 
 
-async def test_validation_uses_own_closed_session(
-    hass: HomeAssistant, mock_client: MagicMock
+async def test_validation_uses_own_detached_session(
+    hass: HomeAssistant, mock_auth: MagicMock, mock_client: MagicMock
 ) -> None:
     """Validation runs on its own session with an empty cookie jar, detached afterwards."""
     created: list[tuple[aiohttp.ClientSession, dict]] = []
@@ -49,8 +65,8 @@ async def test_validation_uses_own_closed_session(
             side_effect=capture,
         ),
         patch(
-            "custom_components.petivity.config_flow.PetivityClient", return_value=mock_client
-        ) as client_cls,
+            "custom_components.petivity.config_flow.PurinaAuth", return_value=mock_auth
+        ) as auth_cls,
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
         await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
@@ -59,19 +75,23 @@ async def test_validation_uses_own_closed_session(
     session, kwargs = created[0]
     assert isinstance(kwargs["cookie_jar"], aiohttp.DummyCookieJar)
     assert kwargs["auto_cleanup"] is False
-    assert client_cls.call_args.args[0] is session
+    assert auth_cls.call_args.args[1] is session
     assert session.closed  # detach() puts the session in the closed state
 
 
-async def test_user_flow_invalid_auth(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    mock_client.async_renew.side_effect = PetivityAuthError("no")
+async def test_user_flow_invalid_auth(
+    hass: HomeAssistant, mock_auth: MagicMock, mock_client: MagicMock
+) -> None:
+    mock_auth.async_login.side_effect = PetivityAuthError("no")
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
 
 
-async def test_user_flow_cannot_connect(hass: HomeAssistant, mock_client: MagicMock) -> None:
+async def test_user_flow_cannot_connect(
+    hass: HomeAssistant, mock_auth: MagicMock, mock_client: MagicMock
+) -> None:
     mock_client.async_get_household.side_effect = PetivityConnectionError("down")
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
@@ -80,7 +100,10 @@ async def test_user_flow_cannot_connect(hass: HomeAssistant, mock_client: MagicM
 
 
 async def test_user_flow_already_configured(
-    hass: HomeAssistant, mock_client: MagicMock, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_auth: MagicMock,
+    mock_client: MagicMock,
+    config_entry: MockConfigEntry,
 ) -> None:
     config_entry.add_to_hass(hass)
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
@@ -90,17 +113,21 @@ async def test_user_flow_already_configured(
 
 
 async def test_reauth_updates_entry(
-    hass: HomeAssistant, mock_client: MagicMock, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_auth: MagicMock,
+    mock_client: MagicMock,
+    config_entry: MockConfigEntry,
 ) -> None:
     config_entry.add_to_hass(hass)
     result = await config_entry.start_reauth_flow(hass)
     assert result["step_id"] == "reauth_confirm"
-    new = {CONF_ID_TOKEN: "new.id.token", CONF_REFRESH_TOKEN: "new-refresh"}
-    mock_client.id_token, mock_client.refresh_token = new[CONF_ID_TOKEN], new[CONF_REFRESH_TOKEN]
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], new)
+    mock_auth.id_token = "new.id.token"
+    mock_auth.refresh_token = "new-refresh"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
-    assert config_entry.data == new
+    assert config_entry.data[CONF_ID_TOKEN] == "new.id.token"
+    assert config_entry.data[CONF_PASSWORD] == "hunter2"
     # Reauth reloads the entry; unload it so its poll timer does not linger.
     await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(config_entry.entry_id)

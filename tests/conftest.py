@@ -10,7 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.petivity.const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN, DOMAIN
+from custom_components.petivity.const import (
+    CONF_DPOP_KEY,
+    CONF_EMAIL,
+    CONF_ID_TOKEN,
+    CONF_PASSWORD,
+    CONF_REFRESH_TOKEN,
+    DOMAIN,
+)
 
 MACHINE_A = "TWFjaGluZTphYWFh"
 MACHINE_B = "TWFjaGluZTpiYmJi"
@@ -124,17 +131,36 @@ def config_entry() -> MockConfigEntry:
         domain=DOMAIN,
         title="Petivity",
         unique_id=HOUSEHOLD["id"],
-        data={CONF_ID_TOKEN: "id.tok.en", CONF_REFRESH_TOKEN: "refresh-token"},
+        data={
+            CONF_EMAIL: "cat@example.com",
+            CONF_PASSWORD: "hunter2",
+            CONF_ID_TOKEN: "id.tok.en",
+            CONF_REFRESH_TOKEN: "refresh-token",
+            CONF_DPOP_KEY: "pem-abc123",
+        },
     )
 
 
 @pytest.fixture
-def mock_client() -> Generator[MagicMock]:
+def mock_auth() -> Generator[MagicMock]:
+    """Patch the auth provider everywhere the integration creates one."""
+    auth = MagicMock()
+    auth.id_token = "id.tok.en"
+    auth.refresh_token = "refresh-token"
+    auth.dpop_key_pem = "pem-abc123"
+    auth.async_login = AsyncMock()
+    auth.async_id_token = AsyncMock(return_value="id.tok.en")
+    with (
+        patch("custom_components.petivity.PurinaAuth", return_value=auth),
+        patch("custom_components.petivity.config_flow.PurinaAuth", return_value=auth),
+    ):
+        yield auth
+
+
+@pytest.fixture
+def mock_client(mock_auth: MagicMock) -> Generator[MagicMock]:
     """Patch the API client everywhere the integration creates one."""
     client = MagicMock()
-    client.id_token = "id.tok.en"
-    client.refresh_token = "refresh-token"
-    client.async_renew = AsyncMock()
     client.async_get_household = AsyncMock(return_value=household())
     client.async_get_events = AsyncMock(return_value=[])
     with (

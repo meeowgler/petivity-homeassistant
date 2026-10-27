@@ -15,11 +15,25 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN
+from .const import (
+    CONF_DPOP_KEY,
+    CONF_EMAIL,
+    CONF_ID_TOKEN,
+    CONF_PASSWORD,
+    CONF_REFRESH_TOKEN,
+)
 from .coordinator import PetivityConfigEntry, PetivityData
 
 REDACTED = "**REDACTED**"
-TO_REDACT = {CONF_ID_TOKEN, CONF_REFRESH_TOKEN, "sn", "name"}
+TO_REDACT = {
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_ID_TOKEN,
+    CONF_REFRESH_TOKEN,
+    CONF_DPOP_KEY,
+    "sn",
+    "name",
+}
 
 
 def _aliases(data: PetivityData) -> dict[str, str]:

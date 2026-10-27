@@ -3,29 +3,29 @@
     "step": {
       "user": {
         "title": "Connect to Petivity",
-        "description": "Petivity only allows sign-in through its own login page, so this integration reuses the session that page creates. Sign in at {login_url} in a desktop browser, open the developer tools, and under Application (Chrome, Edge) or Storage (Firefox) > Cookies > {login_url} copy the values of the `id_token` and `refresh_token` cookies. The README has step-by-step instructions.",
+        "description": "Sign in with the email and password for your Petivity (Purina) account — the same ones the Petivity app uses. Home Assistant keeps the session renewed on its own.",
         "data": {
-          "id_token": "id_token cookie",
-          "refresh_token": "refresh_token cookie"
+          "email": "Email address",
+          "password": "Password"
         }
       },
       "reauth_confirm": {
         "title": "Petivity sign-in expired",
-        "description": "Petivity no longer accepts the stored session. Sign in at {login_url} again and paste the new `id_token` and `refresh_token` cookie values.",
+        "description": "Home Assistant could no longer sign in to Petivity. Enter the password for your account again.",
         "data": {
-          "id_token": "id_token cookie",
-          "refresh_token": "refresh_token cookie"
+          "email": "Email address",
+          "password": "Password"
         }
       }
     },
     "error": {
-      "invalid_auth": "Petivity rejected this session. Copy both cookies again right after signing in.",
+      "invalid_auth": "Petivity did not accept that email and password.",
       "cannot_connect": "Could not reach Petivity."
     },
     "abort": {
       "already_configured": "This Petivity household is already configured.",
       "reauth_successful": "Petivity sign-in updated.",
-      "wrong_account": "Those cookies belong to a different Petivity household."
+      "wrong_account": "That account is a different Petivity household."
     }
   },
   "entity": {
