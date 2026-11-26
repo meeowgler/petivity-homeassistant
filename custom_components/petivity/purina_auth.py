@@ -227,7 +227,10 @@ class PurinaAuth:
             session.detach()
 
     async def _login(self) -> None:
-        key = ec.generate_private_key(ec.SECP256R1())
+        # Key generation is CPU work; keep it off the event loop.
+        key = await self._hass.async_add_executor_job(
+            ec.generate_private_key, ec.SECP256R1()
+        )
         verifier = secrets.token_urlsafe(64)
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         params = {

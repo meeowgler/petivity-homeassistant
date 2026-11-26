@@ -170,3 +170,26 @@ async def test_rejected_refresh_falls_back_to_login(
     )
     assert await auth.async_id_token() == idt
     assert auth.refresh_token == "rt-new"
+
+
+async def test_login_generates_key_off_the_event_loop(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The DPoP key is CPU work, so it must be made in the executor."""
+    import threading
+
+    from custom_components.petivity import purina_auth
+
+    real = purina_auth.ec.generate_private_key
+    threads: list[str] = []
+
+    def spy(curve):
+        threads.append(threading.current_thread().name)
+        return real(curve)
+
+    monkeypatch.setattr(purina_auth.ec, "generate_private_key", spy)
+    _mock_sign_in_pages(aioclient_mock)
+    aioclient_mock.post(TOKEN, json={"id_token": _jwt(time.time() + 86400), "refresh_token": "rt-1"})
+    await _auth(hass).async_login()
+    assert threads, "no key was generated"
+    assert threading.main_thread().name not in threads

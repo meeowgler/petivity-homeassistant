@@ -29,7 +29,7 @@ GRAPHQL_URL = "https://api.petivity.com/graphql"
 # ("Python/...", "aiohttp/...", "curl/...") with a 403. Any descriptive agent
 # is accepted, so identify the integration honestly. Keep it to a bare
 # product token: an agent containing a URL is blocked too.
-USER_AGENT = "petivity-homeassistant/0.3.0"
+USER_AGENT = "petivity-homeassistant/0.3.1"
 
 # Petivity's gateway times out now and then (HTTP 504), and a connection or
 # DNS lookup can fail once. One retry after a pause rides out those blips
