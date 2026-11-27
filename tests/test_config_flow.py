@@ -132,3 +132,23 @@ async def test_reauth_updates_entry(
     await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
+
+
+def _password_is_masked(form: dict) -> bool:
+    selector = next(
+        value for key, value in form["data_schema"].schema.items() if key == CONF_PASSWORD
+    )
+    return getattr(selector, "config", {}).get("type") == "password"
+
+
+async def test_password_field_is_masked(
+    hass: HomeAssistant, mock_auth: MagicMock, config_entry: MockConfigEntry
+) -> None:
+    """The password is typed into a masked field on both forms."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert _password_is_masked(result)
+
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_confirm"
+    assert _password_is_masked(result)
